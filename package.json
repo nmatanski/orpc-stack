@@ -1,0 +1,142 @@
+{
+  "name": "orpc-stack",
+  "version": "0.1.0",
+  "description": "Full-stack oRPC utilities for shared contracts, server adapters, and typed TanStack Query options.",
+  "type": "module",
+  "license": "MIT",
+  "author": "nmatanski",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nmatanski/orpc-stack.git"
+  },
+  "homepage": "https://github.com/nmatanski/orpc-stack#readme",
+  "bugs": {
+    "url": "https://github.com/nmatanski/orpc-stack/issues"
+  },
+  "keywords": [
+    "orpc",
+    "tanstack-query",
+    "rpc",
+    "typescript",
+    "standard-schema",
+    "hono"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.33.2",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js"
+    },
+    "./endpoint": {
+      "types": "./dist/endpoint.d.ts",
+      "import": "./dist/endpoint.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./handler": {
+      "types": "./dist/handlers/fetch.d.ts",
+      "import": "./dist/handlers/fetch.js"
+    },
+    "./node": {
+      "types": "./dist/handlers/node.d.ts",
+      "import": "./dist/handlers/node.js"
+    },
+    "./hono": {
+      "types": "./dist/adapters/servers/hono.d.ts",
+      "import": "./dist/adapters/servers/hono.js"
+    },
+    "./ky": {
+      "types": "./dist/adapters/transports/ky.d.ts",
+      "import": "./dist/adapters/transports/ky.js"
+    },
+    "./axios": {
+      "types": "./dist/adapters/transports/axios.d.ts",
+      "import": "./dist/adapters/transports/axios.js"
+    },
+    "./package.json": "./package.json",
+    "./fastify": {
+      "types": "./dist/adapters/servers/fastify.d.ts",
+      "import": "./dist/adapters/servers/fastify.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node scripts/clean.mjs && tsc -p tsconfig.json",
+    "check": "biome check .",
+    "format": "biome check --write .",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check:package": "publint --strict && attw --pack --profile esm-only",
+    "verify": "pnpm run check && pnpm run build && pnpm run typecheck && pnpm run test:coverage && pnpm run check:package",
+    "prepack": "pnpm run build",
+    "prepublishOnly": "pnpm run verify"
+  },
+  "peerDependencies": {
+    "@orpc/client": "^1.15.4",
+    "@orpc/server": "^1.15.4",
+    "@orpc/tanstack-query": "^1.15.4",
+    "@tanstack/query-core": "^5.80.2",
+    "axios": "^1.0.0",
+    "fastify": "^5.0.0",
+    "hono": "^4.12.25",
+    "ky": "^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "axios": {
+      "optional": true
+    },
+    "hono": {
+      "optional": true
+    },
+    "ky": {
+      "optional": true
+    },
+    "fastify": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@biomejs/biome": "^2.4.7",
+    "@nestjs/common": "^12.1.2",
+    "@nestjs/core": "^12.1.2",
+    "@nestjs/platform-fastify": "^12.1.2",
+    "@orpc/client": "^1.15.4",
+    "@orpc/server": "^1.15.4",
+    "@orpc/tanstack-query": "^1.15.4",
+    "@tanstack/query-core": "^5.80.2",
+    "@types/node": "^24.19.1",
+    "@vitest/coverage-v8": "^5.0.3",
+    "axios": "^1.0.0",
+    "fastify": "^5.12.5",
+    "hono": "^4.12.25",
+    "ky": "^2.0.0",
+    "publint": "^0.3.25",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3",
+    "yup": "^1.7.0",
+    "zod": "^4.3.6"
+  }
+}

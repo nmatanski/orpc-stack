@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+.local/
+*.tgz
+*.log
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.npmrc.publish
+.npmrc.local
