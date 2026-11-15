@@ -70,7 +70,7 @@ it('turns an existing array function into an infinite query', async () => {
     fetch: async (request) => app.request(request),
   });
   const client = new QueryClient();
-  const pages = await client.fetchInfiniteQuery({
+  const pages = await client.infiniteQuery({
     ...queries.list.infiniteOptions({
       input: (cursor: number) => ({ cursor, query: 'yes' }),
       initialPageParam: 0,

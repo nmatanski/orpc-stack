@@ -50,7 +50,7 @@ it('connects existing functions to query and infinite-query options through a mo
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  const facts = await queryClient.fetchQuery(
+  const facts = await queryClient.query(
     queries.facts.queryOptions({ staleTime: 60_000 }),
   );
   expectTypeOf(facts).toEqualTypeOf<{ title: string; count: number }>();
@@ -60,8 +60,8 @@ it('connects existing functions to query and infinite-query options through a mo
     initialPageParam: 0,
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
-  await queryClient.fetchInfiniteQuery(options);
-  const pages = await queryClient.fetchInfiniteQuery({ ...options, pages: 2 });
+  await queryClient.infiniteQuery(options);
+  const pages = await queryClient.infiniteQuery({ ...options, pages: 2 });
   expect(pages.pages).toEqual([
     { results: ['Example 0'], nextCursor: 1 },
     { results: ['Example 1'], nextCursor: null },

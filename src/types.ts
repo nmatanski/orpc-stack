@@ -16,6 +16,8 @@ export type CheckedContract<
   input: Schema<unknown, unknown>;
   output: TOutput;
   validation: 'checked';
+  kind?: RpcHookKind;
+  pagination?: InfinitePagination;
   responseValidator?: Schema<
     InferSchemaOutput<TOutput>,
     InferSchemaOutput<TOutput>
@@ -24,6 +26,70 @@ export type CheckedContract<
 export type UncheckedSchema<T> = Schema<T, T> & {
   readonly '~orpc-stack': 'unchecked';
 };
+export type RpcHookKind = 'query' | 'mutation' | 'infinite';
+export type InfinitePagination = {
+  input?: string;
+  next?: string;
+  initial?: number;
+};
+type HookMetadata = { kind?: RpcHookKind; pagination?: InfinitePagination };
+export type PaginationInputKey<C> = C extends {
+  pagination: { input: infer K extends string };
+}
+  ? K
+  : 'cursor';
+export type PaginationNextKey<C> = C extends {
+  pagination: { next: infer K extends string };
+}
+  ? K
+  : 'nextCursor';
+
+type WithField<T, K extends string, V> =
+  T extends Record<string, never>
+    ? Record<K, V>
+    : K extends keyof T
+      ? T
+      : { [P in keyof T | K]: P extends keyof T ? T[P] : V };
+type InputSchema<D extends RpcContractDefinition> = D extends {
+  input: infer S extends Schema<unknown, unknown>;
+}
+  ? S
+  : Schema<undefined, undefined>;
+type InfiniteInputValue<T> = [T] extends [undefined] ? Record<never, never> : T;
+type NormalizedInput<D extends RpcContractDefinition> = D extends {
+  kind: 'infinite';
+}
+  ? Schema<
+      WithField<
+        InfiniteInputValue<InferSchemaInput<InputSchema<D>>>,
+        PaginationInputKey<D>,
+        number
+      >,
+      WithField<
+        InfiniteInputValue<InferSchemaOutput<InputSchema<D>>>,
+        PaginationInputKey<D>,
+        number
+      >
+    >
+  : InputSchema<D>;
+type NormalizedOutput<D extends RpcContractDefinition> = D extends {
+  kind: 'infinite';
+}
+  ? Schema<
+      WithField<
+        InferSchemaInput<D['output']>,
+        PaginationNextKey<D>,
+        number | null
+      >,
+      WithField<
+        InferSchemaOutput<D['output']>,
+        PaginationNextKey<D>,
+        number | null
+      >
+    >
+  : D['output'];
+type ObjectConstraint<T> = T extends object ? unknown : never;
+
 export type RpcContract = CheckedContract | UncheckedContract<unknown, unknown>;
 export type HandlerErrorOptions = {
   mapHandlerError?: (error: unknown) => Error;
@@ -40,6 +106,8 @@ export type UncheckedContract<TInput, TOutput> = {
   input: UncheckedSchema<TInput>;
   output: UncheckedSchema<TOutput>;
   validation: 'unchecked';
+  kind?: RpcHookKind;
+  pagination?: InfinitePagination;
   responseValidator?: never;
 };
 export type UncheckedProcedureOptions<TInput, TOutput> = HandlerErrorOptions & {
@@ -51,6 +119,8 @@ export type RpcContractDefinition =
       input?: Schema<unknown, unknown>;
       output: Schema<unknown, unknown>;
       validation?: 'checked';
+      kind?: RpcHookKind;
+      pagination?: InfinitePagination;
       responseValidator?: Schema<unknown, unknown>;
     }
   | UncheckedContract<unknown, unknown>;
@@ -62,33 +132,51 @@ export type ResponseValidatorConstraints<
 > = {
   [K in keyof TDefinitions]: {
     responseValidator?: Schema<
-      InferSchemaOutput<TDefinitions[K]['output']>,
-      InferSchemaOutput<TDefinitions[K]['output']>
+      InferSchemaOutput<NormalizedOutput<TDefinitions[K]>>,
+      InferSchemaOutput<NormalizedOutput<TDefinitions[K]>>
     >;
-  };
+  } & (TDefinitions[K] extends { kind: 'infinite' }
+    ? {
+        input?: InputSchema<TDefinitions[K]> &
+          ObjectConstraint<
+            InfiniteInputValue<InferSchemaInput<InputSchema<TDefinitions[K]>>>
+          > &
+          ObjectConstraint<
+            InfiniteInputValue<InferSchemaOutput<InputSchema<TDefinitions[K]>>>
+          >;
+        output: TDefinitions[K]['output'] &
+          ObjectConstraint<InferSchemaInput<TDefinitions[K]['output']>> &
+          ObjectConstraint<InferSchemaOutput<TDefinitions[K]['output']>>;
+      }
+    : TDefinitions[K] extends { pagination: InfinitePagination }
+      ? { pagination: never }
+      : unknown);
 };
 
-type NormalizedRpcContract<TDefinition extends RpcContractDefinition> =
-  TDefinition extends UncheckedContract<unknown, unknown>
-    ? TDefinition
+type NormalizedRpcContract<D extends RpcContractDefinition> =
+  D extends UncheckedContract<unknown, unknown>
+    ? D
     : {
-        input: TDefinition extends {
-          input: infer TInput extends Schema<unknown, unknown>;
-        }
-          ? TInput
-          : Schema<undefined, undefined>;
-        output: TDefinition['output'];
+        input: NormalizedInput<D>;
+        output: NormalizedOutput<D>;
         validation: 'checked';
-        responseValidator?: TDefinition extends {
-          responseValidator: infer TSchema extends Schema<unknown, unknown>;
+        responseValidator?: D extends {
+          responseValidator: infer S extends Schema<unknown, unknown>;
         }
-          ? TSchema
+          ? S
           : never;
       };
 export type NormalizedRpcContracts<
   TDefinitions extends RpcProcedureDefinitions,
 > = {
-  [K in keyof TDefinitions]: NormalizedRpcContract<TDefinitions[K]>;
+  [K in keyof TDefinitions]: NormalizedRpcContract<TDefinitions[K]> &
+    HookMetadata &
+    (TDefinitions[K] extends { kind: infer Kind extends RpcHookKind }
+      ? { kind: Kind }
+      : unknown) &
+    (TDefinitions[K] extends { pagination: infer P extends InfinitePagination }
+      ? { pagination: P }
+      : unknown);
 };
 export type RpcClient<
   TContracts extends RpcProcedureContracts,

@@ -1,23 +1,27 @@
 # orpc-stack
 
-Expose existing TypeScript functions through oRPC and consume typed TanStack Query options. One shared contract supplies the endpoint, types, and validation.
+Expose TypeScript functions through oRPC with a shared contract, validation, and typed TanStack Query hooks.
 
 ```sh
-npm install orpc-stack
+npm install orpc-stack react @tanstack/react-query
 ```
 
-## Quick start
+ESM; Node.js 22+ or modern browsers. Examples use Zod and Hono; other Standard Schema libraries and server adapters work too.
 
-Zod and Hono illustrate this example; use your preferred validation library and server adapter.
+## Quick start
 
 ```ts
 // shared.ts
 import { defineRpcEndpoint } from 'orpc-stack/endpoint';
 import { z } from 'zod';
 
-// Share the endpoint, types, and validation.
 export const endpoint = defineRpcEndpoint('/api/rpc', {
   count: { output: z.number() },
+  increment: {
+    kind: 'mutation',
+    input: z.object({ amount: z.number() }),
+    output: z.number(),
+  },
 });
 ```
 
@@ -27,88 +31,71 @@ import { Hono } from 'hono';
 import { mountHono } from 'orpc-stack/hono';
 import { endpoint } from './shared.js';
 
-const getCount = async () => 42;
-const api = { count: getCount }; // Bind names to server functions.
+let count = 0;
 const app = new Hono();
-mountHono(app, endpoint, api); // Serve the RPC endpoint.
+mountHono(app, endpoint, {
+  count: () => count,
+  increment: ({ amount }) => (count += amount),
+});
 ```
 
 ```tsx
 // client.tsx
-import { useQuery } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { createQueries } from 'orpc-stack/client';
 import { endpoint } from './shared.js';
 
-const queries = createQueries(endpoint); // Create typed query options.
+export const queries = createQueries(endpoint);
+export const { useCountQuery, useIncrementMutation } = queries;
 
 // Inside a component under QueryClientProvider:
-const count = useQuery(queries.count.queryOptions());
+const queryClient = useQueryClient();
+const count = useCountQuery();
+const increment = useIncrementMutation({
+  onSuccess: () => queryClient.invalidateQueries({ queryKey: queries.count.key() }),
+});
+// In an event handler:
+increment.mutate({ amount: 1 });
 ```
 
-Schemas bind to functions by name. Fetch is the default transport. Set `origin` for external APIs or SSR; browsers use the current origin.
+Create `queries` once at module scope. Fetch uses the current browser origin; pass `{ origin: 'https://api.example.com' }` for external APIs or SSR.
 
-## Validation options
+## Hooks and manual options
 
-Zod is shown above; any Standard Schema works directly, without a resolver. Omitted input means validated no input. Add an `input` schema for arguments; keep shared contracts free of server imports and secrets.
+| Contract `kind` | Generated hook | Arguments |
+| --- | --- | --- |
+| `'query'` (default) | `useNameQuery` | `(input?, options?)` |
+| `'mutation'` | `useNameMutation` | `(options?)` |
+| `'infinite'` | `useNameInfiniteQuery` | `(input?, options?)` |
 
-<details>
-<summary>Yup (1.7+) or unchecked TypeScript</summary>
+Inputs and results are inferred; required inputs stay required. Hooks accept TanStack options and return TanStack results. Cache invalidation is explicit.
 
-Replace the `count` contract with either option:
+The same object exposes manual calls and options with matching cache keys:
 
-```ts
-import * as yup from 'yup';
-const count = { output: yup.number().required() };
+```tsx
+import { useQuery } from '@tanstack/react-query';
+
+await queries.increment.call({ amount: 1 });
+const count = useQuery(queries.count.queryOptions({ staleTime: 60_000 }));
+// Also available: mutationOptions(), infiniteOptions(), and key helpers.
 ```
-
-```ts
-import { defineUncheckedRpcContract } from 'orpc-stack/endpoint';
-const count = defineUncheckedRpcContract<undefined, number>();
-```
-
-Unchecked mode preserves compile-time types but performs no runtime validation.
-
-</details>
-
-<details>
-<summary>Standard Schema without a validation library</summary>
-
-```ts
-import type { Schema } from '@orpc/server';
-
-const numberSchema = {
-  '~standard': {
-    version: 1,
-    vendor: 'example',
-    validate: (value: unknown) =>
-      typeof value === 'number' && Number.isFinite(value)
-        ? { value }
-        : { issues: [{ message: 'Expected a finite number' }] },
-  },
-} satisfies Schema<number, number>;
-// count: { output: numberSchema }
-```
-
-</details>
-
-Output schemas validate/transform once on the server. Optional `responseValidator` checks parsed client replies without replacing them.
 
 ## Pagination
 
-Add `list` to the shared endpoint:
+Add `list` to the shared endpoint. `kind: 'infinite'` generates and validates `cursor` and `nextCursor` automatically:
 
 ```ts
 list: {
-  input: z.object({ query: z.string(), cursor: z.number().int().nonnegative() }),
+  kind: 'infinite',
+  input: z.object({ query: z.string() }),
   output: z.object({
     results: z.array(z.string()),
     total: z.number().int().nonnegative(),
-    nextCursor: z.number().int().nonnegative().nullable(),
   }),
 }
 ```
 
-Then wrap an array-returning server function and use an infinite query:
+Wrap an array-returning server function:
 
 ```ts
 import { paginate } from 'orpc-stack/server';
@@ -116,224 +103,98 @@ import { paginate } from 'orpc-stack/server';
 const listItems = async ({ query }: { query: string }) =>
   ['Apple', 'Apricot', 'Banana'].filter(item => item.includes(query));
 mountHono(app, endpoint, {
-  count: getCount,
-  list: paginate(listItems, { pageSize: 2 }), // Turn arrays into pages.
+  count: () => count,
+  increment: ({ amount }) => (count += amount),
+  list: paginate(listItems, { pageSize: 2 }),
 });
 ```
 
 ```tsx
-import { useInfiniteQuery } from '@tanstack/react-query';
+// At module scope:
+export const { useListInfiniteQuery } = createQueries(endpoint);
 
-const items = useInfiniteQuery(queries.list.infiniteOptions({
-  input: (cursor: number) => ({ query: 'Ap', cursor }),
-  initialPageParam: 0,
-  getNextPageParam: page => page.nextCursor ?? undefined,
-}));
+// Inside a component under QueryClientProvider:
+const items = useListInfiniteQuery({ query: 'Ap' });
 // items.data?.pages.flatMap(page => page.results)
 // items.fetchNextPage() loads more when items.hasNextPage is true.
 ```
 
-Replace the quick-start mount with this one. Pages default to 20 items. `paginateArray(items, { cursor, pageSize })` is also available from `/server`. A null array produces null results with zero total; allow nullable results in your contract if needed.
+Generated cursors are integers starting at `0`; `nextCursor: null` ends pagination. Explicit schemas control their own fields. Custom names and starting values go in `pagination`; hook options or manual `infiniteOptions()` support other paging logic. Strict object schemas must declare the pagination fields.
 
-Array pagination loads the full collection per request and assumes stable ordering. Use it for small collections; paginate large database lists in the query itself.
+`paginate` defaults to 20 items per page. `paginateArray(items, { cursor, pageSize })` is also available from `/server`. These helpers load the full array per request; use them for small collections and paginate large database lists in the query itself.
 
-## Other server adapters
+## Validation
 
-These examples reuse the quick-start `endpoint` and plain-function `api`. Register authentication before RPC routes; Nest controller guards do not cover directly mounted RPC routes.
+Contracts accept any Standard Schema, including Zod and Yup. Omitted input means no arguments. Output validation and transforms run on the server; optional `responseValidator` checks parsed client replies.
 
-<details>
-<summary>Fastify</summary>
-
-```ts
-import Fastify from 'fastify';
-import { mountFastify } from 'orpc-stack/fastify';
-
-const app = Fastify();
-mountFastify(app, endpoint, api);
-await app.listen({ port: 3000 });
-```
-
-RPC body parsers are scoped; existing REST parsers stay intact.
-
-</details>
-
-<details>
-<summary>NestJS with Fastify</summary>
+For trusted data without runtime validation:
 
 ```ts
-import { NestFactory } from '@nestjs/core';
-import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { mountFastify } from 'orpc-stack/fastify';
-import { AppModule } from './app.js';
-
-const app = await NestFactory.create<NestFastifyApplication>(
-  AppModule, new FastifyAdapter(),
-);
-mountFastify(app.getHttpAdapter().getInstance(), endpoint, api);
-await app.listen(3000);
+import { defineUncheckedRpcContract } from 'orpc-stack/endpoint';
+const count = defineUncheckedRpcContract<undefined, number>();
 ```
 
-For injected services, use `app.get(YourService)` and wrap its methods in arrow functions. Apply authentication with Fastify hooks before mounting.
+## Server adapters
 
-</details>
+| Import from | Export | Usage |
+| --- | --- | --- |
+| `orpc-stack/hono` | `mountHono` | `mountHono(app, endpoint, api)` |
+| `orpc-stack/fastify` | `mountFastify` | `mountFastify(app, endpoint, api)` |
+| `orpc-stack/handler` | `createRpcHandler` | Fetch handler for `defineRpcApi(endpoint, api)` |
+| `orpc-stack/node` | `createNodeRpcHandler` | Node handler for `defineRpcApi(endpoint, api)` |
 
-<details>
-<summary>NestJS with Express</summary>
+`defineRpcApi` comes from `orpc-stack/server`. Handler `.handle()` calls take `{ prefix: endpoint.path }` and return a `matched` flag. Fetch handlers also return a `response`.
+
+For NestJS with Fastify, pass `app.getHttpAdapter().getInstance()` to `mountFastify`. Wrap injected service methods in arrow functions. With Express, mount the Node handler before body parsers so it receives the unread body.
+
+Register authentication before RPC routes. Nest controller guards do not cover directly mounted routes.
+
+### Next.js App Router
+
+For an endpoint at `/api/rpc`, create `app/api/rpc/[...path]/route.ts`:
 
 ```ts
-import { NestFactory } from '@nestjs/core';
-import type { Request, Response, NextFunction } from 'express';
-import { defineRpcApi } from 'orpc-stack/server';
-import { createNodeRpcHandler } from 'orpc-stack/node';
-import { AppModule } from './app.js';
+import { createNextHandler } from 'orpc-stack/next';
+import { endpoint } from '@/lib/contract';
+import { api } from '@/lib/api';
 
-const app = await NestFactory.create(AppModule, { bodyParser: false });
-const rpc = createNodeRpcHandler(defineRpcApi(endpoint, api));
-app.use(async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const result = await rpc.handle(req, res, { prefix: endpoint.path });
-    if (!result.matched) next();
-  } catch (error) {
-    next(error);
-  }
-});
-await app.listen(3000);
+export const POST = createNextHandler(endpoint, api);
 ```
 
-RPC needs the unread body. Register REST JSON parsers after RPC middleware and authentication before it.
-
-</details>
-
-<details>
-<summary>Any Fetch server</summary>
-
-```ts
-import { defineRpcApi } from 'orpc-stack/server';
-import { createRpcHandler } from 'orpc-stack/handler';
-
-const rpc = createRpcHandler(defineRpcApi(endpoint, api));
-const handle = async (request: Request) => {
-  const result = await rpc.handle(request, { prefix: endpoint.path });
-  return result.matched ? result.response : new Response('Not found', { status: 404 });
-};
-```
-
-</details>
+The handler uses the contract path, returns 404 for unknown procedures, and accepts the same optional `mapHandlerError` options as the mounters.
 
 ## Error mapping
 
-Pass `mapHandlerError` to the mounter to map plain-function failures. Validation and protocol errors keep oRPC's own handling.
-
-<details>
-<summary>Map handler failures to typed oRPC errors</summary>
+Mounters and `defineRpcApi` accept `mapHandlerError` for plain-function failures:
 
 ```ts
 import { ORPCError } from '@orpc/server';
 
 mountHono(app, endpoint, api, {
-  mapHandlerError: (error) => {
-    if (error instanceof ORPCError) return error;
-    console.error('RPC handler failed', error);
-    return new ORPCError('SERVICE_UNAVAILABLE', {
-      message: 'Try again shortly.',
-    });
-  },
+  mapHandlerError: error => error instanceof ORPCError
+    ? error
+    : new ORPCError('SERVICE_UNAVAILABLE', { message: 'Try again shortly.' }),
 });
 ```
 
-The same options work with `mountFastify` or `defineRpcApi`. Existing oRPC errors keep their codes; unexpected failures get a safe public message. Validation and protocol failures use oRPC's own handling.
+Validation and protocol errors retain oRPC handling. For standalone procedures or per-procedure options, use `defineRpcProcedure`, `defineUncheckedRpcProcedure`, or `definePaginatedRpcProcedure` from `orpc-stack/server`.
 
-</details>
+## Custom transports
 
-Explicit `defineRpcProcedure` and `definePaginatedRpcProcedure` remain available for standalone procedures or per-procedure options; supply their endpoint contract directly.
+Fetch works by default. To reuse an Axios instance or Ky configuration:
 
-## Optional transports
-
-Fetch needs no adapter. Use Ky for an existing Ky policy or Axios to reuse instance defaults/interceptors; neither adds RPC type safety. Install your chosen library separately.
-
-**Ky**
+```ts
+import { createAxiosTransport } from 'orpc-stack/axios';
+const queries = createQueries(endpoint, { fetch: createAxiosTransport(axiosInstance) });
+```
 
 ```ts
 import { kyTransport } from 'orpc-stack/ky';
 const queries = createQueries(endpoint, { fetch: kyTransport });
 ```
 
-<details>
-<summary>Use your configured Ky instance</summary>
+For a configured Ky instance, pass a fetch wrapper with `throwHttpErrors: false` and `retry: 0`. Preserve raw response bodies and let oRPC handle error statuses. Axios response interceptors must preserve `AxiosResponse<ArrayBuffer>`.
 
-```ts
-import { kyInstance } from './http.js'; // Your ky.create(...) or ky.extend(...) instance.
+The root `orpc-stack` exports the endpoint/client helpers and types: `RpcEndpoint`, `RpcApi`, `RpcClient`, `RpcFetch`, `QueryConnectionOptions`, and `InfinitePagination`.
 
-const queries = createQueries(endpoint, {
-  fetch: (request, init) => kyInstance(request, {
-    ...init,
-    throwHttpErrors: false,
-    retry: 0,
-  }),
-});
-```
-
-Your instance's headers and hooks still apply. Disable Ky retries to avoid stacking them with query retries, and let oRPC decode non-success responses. Hooks should preserve the response body and leave RPC error responses to oRPC.
-
-</details>
-
-**Axios**
-
-```ts
-import axios from 'axios';
-import { createAxiosTransport } from 'orpc-stack/axios';
-
-const queries = createQueries(endpoint, {
-  fetch: createAxiosTransport(axios.create()),
-});
-```
-
-<details>
-<summary>Use your configured Axios instance</summary>
-
-```ts
-import { axiosInstance } from './http.js'; // Your axios.create(...) instance with interceptors.
-
-const queries = createQueries(endpoint, {
-  fetch: createAxiosTransport(axiosInstance),
-});
-```
-
-Instance defaults and request/response interceptors still apply. Keep response interceptors compatible with raw `AxiosResponse<ArrayBuffer>`; do not unwrap `response.data`, parse it as JSON, or throw for RPC error statuses. The adapter supplies the URL, body, signal, response type, and status policy.
-
-</details>
-
-## Export reference
-
-| Import from | Export | Purpose |
-| --- | --- | --- |
-| `orpc-stack/endpoint` | `defineRpcEndpoint` | Shared RPC contract |
-| `orpc-stack/endpoint` | `defineUncheckedRpcContract` | Types without validation |
-| `orpc-stack/client` | `createQueries` | Typed query options |
-| `orpc-stack/server` | `defineRpcApi` | Bind endpoint functions |
-| `orpc-stack/server` | `paginate` | Paginated function wrapper |
-| `orpc-stack/server` | `paginateArray` | Slice array pages |
-| `orpc-stack/server` | `defineRpcProcedure` | Explicit checked procedure |
-| `orpc-stack/server` | `defineUncheckedRpcProcedure` | Explicit unchecked procedure |
-| `orpc-stack/server` | `definePaginatedRpcProcedure` | Explicit paginated procedure |
-| `orpc-stack/hono` | `mountHono` | Mount Hono routes |
-| `orpc-stack/fastify` | `mountFastify` | Mount Fastify routes |
-| `orpc-stack/handler` | `createRpcHandler` | Fetch request handler |
-| `orpc-stack/node` | `createNodeRpcHandler` | Node request handler |
-| `orpc-stack/ky` | `kyTransport` | Default Ky adapter |
-| `orpc-stack/axios` | `createAxiosTransport` | Axios instance adapter |
-
-The root `orpc-stack` also exports the endpoint/client helpers and these types:
-`RpcEndpoint`, `RpcApi`, `RpcClient`, `RpcFetch`, `QueryConnectionOptions`.
-
-Useful companion exports (from their own packages):
-
-| Import from | Export | Purpose |
-| --- | --- | --- |
-| `@orpc/server` | `ORPCError` | Coded RPC errors |
-| `@orpc/server` | `Schema` (type) | Standard Schema contract |
-| `@tanstack/react-query` | `useQuery` | Cached query hook |
-| `@tanstack/react-query` | `useInfiniteQuery` | Paginated query hook |
-| `@tanstack/react-query` | `QueryClientProvider` | Query client context |
-
-ESM; Node.js 22+ or modern browsers. Built on oRPC and TanStack Query. [MIT](LICENSE).
+[MIT](LICENSE).

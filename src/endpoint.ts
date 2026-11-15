@@ -1,4 +1,8 @@
 import type { Schema } from '@orpc/server';
+import {
+  augmentPaginationSchema,
+  resolvePagination,
+} from './infinite-pagination.js';
 import type {
   NormalizedRpcContracts,
   ResponseValidatorConstraints,
@@ -24,6 +28,27 @@ const noInputSchema: Schema<undefined, undefined> = {
 
 const normalizeContract = (contract: RpcContractDefinition): RpcContract => {
   if (contract.validation === 'unchecked') return contract;
+  if (contract.kind === 'infinite') {
+    const pagination = resolvePagination(contract.pagination);
+    return {
+      ...contract,
+      input: augmentPaginationSchema(
+        contract.input,
+        pagination.input,
+        false,
+        pagination.initial,
+      ),
+      output: augmentPaginationSchema(
+        contract.output,
+        pagination.next,
+        true,
+        pagination.initial,
+      ),
+      validation: 'checked',
+    };
+  }
+  if (contract.pagination)
+    throw new Error('Pagination settings require kind: infinite.');
   return {
     ...contract,
     input: contract.input ?? noInputSchema,
@@ -64,7 +89,9 @@ export const defineUncheckedRpcContract = <
 export function defineRpcEndpoint(
   path: `/${string}`,
 ): RpcEndpoint<Record<never, never>>;
-export function defineRpcEndpoint<TContracts extends RpcProcedureDefinitions>(
+export function defineRpcEndpoint<
+  const TContracts extends RpcProcedureDefinitions,
+>(
   path: `/${string}`,
   procedures: TContracts & ResponseValidatorConstraints<NoInfer<TContracts>>,
 ): RpcEndpoint<NormalizedRpcContracts<TContracts>>;
@@ -85,3 +112,5 @@ export function defineRpcEndpoint(
     );
   return Object.freeze({ path, procedures: normalizeContracts(procedures) });
 }
+
+export type { InfinitePagination } from './types.js';

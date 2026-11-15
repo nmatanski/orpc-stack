@@ -1,6 +1,6 @@
 {
   "name": "orpc-stack",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "description": "Full-stack oRPC utilities for shared contracts, server adapters, and typed TanStack Query options.",
   "type": "module",
   "license": "MIT",
@@ -73,6 +73,10 @@
     "./fastify": {
       "types": "./dist/adapters/servers/fastify.d.ts",
       "import": "./dist/adapters/servers/fastify.js"
+    },
+    "./next": {
+      "types": "./dist/adapters/servers/next.d.ts",
+      "import": "./dist/adapters/servers/next.js"
     }
   },
   "publishConfig": {
@@ -95,11 +99,13 @@
     "@orpc/client": "^1.15.4",
     "@orpc/server": "^1.15.4",
     "@orpc/tanstack-query": "^1.15.4",
-    "@tanstack/query-core": "^5.80.2",
-    "axios": "^1.0.0",
-    "fastify": "^5.0.0",
-    "hono": "^4.12.25",
-    "ky": "^2.0.0"
+    "@tanstack/query-core": "^5.107.1",
+    "@tanstack/react-query": "^5.107.1",
+    "axios": "^1.21.1",
+    "fastify": "^5.12.8",
+    "hono": "^4.13.18",
+    "ky": "^2.0.0",
+    "react": "^19.3.1"
   },
   "peerDependenciesMeta": {
     "axios": {
@@ -118,25 +124,32 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
     "@biomejs/biome": "^2.4.7",
-    "@nestjs/common": "^12.1.2",
-    "@nestjs/core": "^12.1.2",
-    "@nestjs/platform-fastify": "^12.1.2",
+    "@nestjs/common": "^12.5.0",
+    "@nestjs/core": "^12.5.0",
+    "@nestjs/platform-fastify": "^12.5.0",
     "@orpc/client": "^1.15.4",
     "@orpc/server": "^1.15.4",
     "@orpc/tanstack-query": "^1.15.4",
-    "@tanstack/query-core": "^5.80.2",
+    "@tanstack/query-core": "^5.107.1",
+    "@tanstack/react-query": "^5.107.1",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^24.19.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@vitest/coverage-v8": "^5.0.3",
-    "axios": "^1.0.0",
-    "fastify": "^5.12.5",
-    "hono": "^4.12.25",
+    "axios": "^1.21.1",
+    "fastify": "^5.12.8",
+    "hono": "^4.13.18",
+    "jsdom": "^31.0.1",
     "ky": "^2.0.0",
     "publint": "^0.3.25",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3",
     "yup": "^1.7.0",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   }
 }

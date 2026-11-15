@@ -8,6 +8,7 @@ const entries = {
   handler: 'handlers/fetch',
   node: 'handlers/node',
   hono: 'adapters/servers/hono',
+  next: 'adapters/servers/next',
   fastify: 'adapters/servers/fastify',
   ky: 'adapters/transports/ky',
   axios: 'adapters/transports/axios',
