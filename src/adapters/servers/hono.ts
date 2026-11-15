@@ -1,3 +1,4 @@
+import type { RPCHandler } from '@orpc/server/fetch';
 import type { Hono } from 'hono';
 import { routePath } from 'hono/route';
 import { createRpcHandler } from '../../handlers/fetch.js';
@@ -15,7 +16,9 @@ export const mountHono = <TContracts extends RpcProcedureContracts>(
   api: RpcImplementations<NoInfer<TContracts>>,
   options: HandlerErrorOptions = {},
 ) => {
-  const handler = createRpcHandler(defineRpcApi(endpoint, api, options));
+  const handler = createRpcHandler(
+    defineRpcApi(endpoint, api, options),
+  ) as RPCHandler<Record<never, never>>;
   app.all(`${endpoint.path}/*`, async (c) => {
     const prefix = `/${routePath(c).slice(1, -2)}` as const;
     const result = await handler.handle(c.req.raw, { prefix });

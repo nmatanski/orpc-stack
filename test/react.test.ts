@@ -13,6 +13,7 @@ import { defineRpcEndpoint } from 'orpc-stack/endpoint';
 import { mountHono } from 'orpc-stack/hono';
 import { createElement } from 'react';
 import { afterEach, expect, expectTypeOf, it, vi } from 'vitest';
+import * as yup from 'yup';
 import { z } from 'zod';
 
 const endpoint = defineRpcEndpoint('/rpc', {
@@ -35,6 +36,73 @@ const endpoint = defineRpcEndpoint('/rpc', {
 });
 
 afterEach(cleanup);
+
+it('infers pagination for query schemas and exposes both query and infinite hooks', async () => {
+  const cursorContract = {
+    input: z.object({ cursor: z.number() }),
+    output: z.object({ nextCursor: z.number().nullable() }),
+  };
+  const custom = defineRpcEndpoint('/rpc', {
+    list: cursorContract,
+    pages: {
+      kind: 'query',
+      input: yup.object({ page: yup.number().integer().min(1).required() }),
+      output: yup.object({ nextPage: yup.number().nullable().defined() }),
+    },
+    save: { ...cursorContract, kind: 'mutation' },
+    ordinary: { input: z.object({ page: z.number() }), output: z.string() },
+  });
+  const app = new Hono();
+  mountHono(app, custom, {
+    list: ({ cursor }) => ({ nextCursor: cursor === 0 ? 1 : null }),
+    pages: ({ page }) => ({ nextPage: page === 1 ? 2 : null }),
+    save: ({ cursor }) => ({ nextCursor: cursor }),
+    ordinary: ({ page }) => String(page),
+  });
+  const queries = createQueries(custom, {
+    origin: 'http://localhost',
+    fetch: async (request) => app.request(request),
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  let cursors!: UseInfiniteQueryResult<
+    InfiniteData<{ nextCursor: number | null }, number>
+  >;
+  let pages!: UseInfiniteQueryResult<
+    InfiniteData<{ nextPage: number | null }, number>
+  >;
+  let single: { nextCursor: number | null } | undefined;
+  let singlePage: { nextPage: number | null } | undefined;
+  await mount(() => {
+    single = queries.useListQuery({ cursor: 4 }).data;
+    singlePage = queries.usePagesQuery({ page: 3 }).data;
+    cursors = queries.useListInfiniteQuery();
+    pages = queries.usePagesInfiniteQuery();
+    void cursors.data;
+    void pages.data;
+    queries.useSaveMutation();
+    queries.useOrdinaryQuery({ page: 5 });
+  }, client);
+  await until(() => {
+    expect(single).toEqual({ nextCursor: null });
+    expect(singlePage).toEqual({ nextPage: null });
+    expect(cursors.data?.pageParams).toEqual([0]);
+    expect(pages.data?.pageParams).toEqual([1]);
+  });
+  await act(async () => {
+    await cursors.fetchNextPage();
+    await pages.fetchNextPage();
+  });
+  await until(() => {
+    expect(cursors.data?.pageParams).toEqual([0, 1]);
+    expect(pages.data?.pageParams).toEqual([1, 2]);
+  });
+  expect(cursors.hasNextPage).toBe(false);
+  expect(pages.hasNextPage).toBe(false);
+  cleanup();
+  client.clear();
+});
 
 const mount = async (consume: () => void, client: QueryClient) => {
   const Component = () => {

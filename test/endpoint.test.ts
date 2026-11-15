@@ -38,9 +38,11 @@ it('uses one endpoint definition for mounting, URL construction, and cache keys 
   const external = createQueries(endpoint, {
     origin: 'https://external.example',
   });
-  expect(queries.facts.queryOptions().queryKey).not.toEqual(
+  expect(queries.facts.queryOptions().queryKey).toEqual(
     external.facts.queryOptions().queryKey,
   );
+  const separate = createQueries(endpoint, { keyPrefix: ['another-service'] });
+  expect(queries.facts.queryKey()).not.toEqual(separate.facts.queryKey());
 });
 
 it('requires an explicit origin only when making requests outside a browser', async () => {

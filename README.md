@@ -82,6 +82,16 @@ const count = useQuery(queries.count.queryOptions({ staleTime: 60_000 }));
 // Also available: mutationOptions(), infiniteOptions(), and key helpers.
 ```
 
+## TanStack Start
+
+Follow [oRPC's Start guide](https://orpc.dev/docs/adapters/tanstack-start), then wrap its isomorphic client:
+
+```ts
+const rpc = createQueries(endpoint, { client });
+// Route loader; components share the same query cache:
+loader: ({ context }) => rpc.load(context.queryClient, { count: {} })
+```
+
 ## Pagination
 
 Add `list` to the shared endpoint. `kind: 'infinite'` generates and validates `cursor` and `nextCursor` automatically:

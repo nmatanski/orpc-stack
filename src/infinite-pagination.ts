@@ -1,5 +1,30 @@
 import type { Schema } from '@orpc/server';
-import type { InfinitePagination } from './types.js';
+import type { InfinitePagination, RpcContractDefinition } from './types.js';
+
+// Standard Schema only specifies validation. Recognize the public object-field
+// metadata exposed by Zod and Yup without running user validators or transforms.
+const schemaFields = (schema: Schema<unknown, unknown> | undefined) => {
+  if (!schema) return undefined;
+  if ('shape' in schema && isRecord(schema.shape)) return schema.shape;
+  if ('fields' in schema && isRecord(schema.fields)) return schema.fields;
+  return undefined;
+};
+
+export const inferPagination = (
+  contract: RpcContractDefinition,
+): InfinitePagination | undefined => {
+  if (contract.kind === 'mutation') return undefined;
+  const input = schemaFields(contract.input);
+  const output = schemaFields(contract.output);
+  if (!input || !output) return undefined;
+  if (Object.hasOwn(input, 'cursor') && Object.hasOwn(output, 'nextCursor')) {
+    return { input: 'cursor', next: 'nextCursor', initial: 0 };
+  }
+  if (Object.hasOwn(input, 'page') && Object.hasOwn(output, 'nextPage')) {
+    return { input: 'page', next: 'nextPage', initial: 1 };
+  }
+  return undefined;
+};
 
 export const resolvePagination = (settings: InfinitePagination = {}) => {
   const result = {

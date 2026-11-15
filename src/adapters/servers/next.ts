@@ -1,3 +1,4 @@
+import type { RPCHandler } from '@orpc/server/fetch';
 import { createRpcHandler } from '../../handlers/fetch.js';
 import { defineRpcApi } from '../../server.js';
 import type {
@@ -13,7 +14,9 @@ export const createNextHandler = <TContracts extends RpcProcedureContracts>(
   api: RpcImplementations<NoInfer<TContracts>>,
   options: HandlerErrorOptions = {},
 ) => {
-  const handler = createRpcHandler(defineRpcApi(endpoint, api, options));
+  const handler = createRpcHandler(
+    defineRpcApi(endpoint, api, options),
+  ) as RPCHandler<Record<never, never>>;
   return async (request: Request): Promise<Response> => {
     const result = await handler.handle(request, { prefix: endpoint.path });
     return result.matched

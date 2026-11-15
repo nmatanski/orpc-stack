@@ -226,11 +226,21 @@ it.each([NaN, Infinity, -Infinity, -1, 0.5])(
   },
 );
 
-it('rejects pagination metadata on non-infinite contracts at runtime', () => {
+it('rejects pagination metadata on mutations at runtime', () => {
   const invalid: Record<
     string,
-    { output: Schema<unknown, unknown>; pagination: { input: string } }
-  > = { list: { output: z.object({}), pagination: { input: 'page' } } };
-  // @ts-expect-error Pagination is only valid for infinite contracts.
-  expect(() => defineRpcEndpoint('/rpc', invalid)).toThrow('kind: infinite');
+    {
+      kind: 'mutation';
+      output: Schema<unknown, unknown>;
+      pagination: { input: string };
+    }
+  > = {
+    list: {
+      kind: 'mutation',
+      output: z.object({}),
+      pagination: { input: 'page' },
+    },
+  };
+  // @ts-expect-error Pagination is not valid for mutations.
+  expect(() => defineRpcEndpoint('/rpc', invalid)).toThrow('mutations');
 });

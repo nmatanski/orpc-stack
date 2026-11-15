@@ -1,5 +1,6 @@
+import { once } from 'node:events';
 import { createServer } from 'node:http';
-import { ORPCError } from '@orpc/server';
+import { ORPCError, os } from '@orpc/server';
 import axios from 'axios';
 import { createAxiosTransport } from 'orpc-stack/axios';
 import { createQueries } from 'orpc-stack/client';
@@ -16,6 +17,51 @@ import {
 } from 'orpc-stack/server';
 import { expect, expectTypeOf, it } from 'vitest';
 import { object, string } from 'yup';
+
+it('resolves typed Node handler context per request and accepts handler interceptors', async () => {
+  const api = {
+    facts: os
+      .$context<{ requestId: string }>()
+      .handler(({ context }) => context.requestId),
+  };
+  const handler = createNodeRpcHandler(api, {
+    context: (request) => ({
+      requestId: String(request.headers['x-request-id']),
+    }),
+    adapterInterceptors: [
+      async ({ response, next }) => {
+        response.setHeader('x-adapter', 'enabled');
+        return next();
+      },
+    ],
+  });
+  const server = createServer((request, response) => {
+    void handler
+      .handle(request, response)
+      .then((result) => {
+        if (!result.matched) response.writeHead(404).end();
+      })
+      .catch(() => response.writeHead(500).end());
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  if (!address || typeof address === 'string')
+    throw new Error('Missing server address');
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/facts`, {
+      method: 'POST',
+      headers: { 'x-request-id': 'node-context' },
+    });
+    expect(response.headers.get('x-adapter')).toBe('enabled');
+    expect(await response.json()).toEqual({ json: 'node-context' });
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
 
 it('preserves Axios headers and supports bodyless HTTP responses', async () => {
   const client = axios.create({

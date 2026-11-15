@@ -1,4 +1,4 @@
-export { createQueries } from './client.js';
+export { createQueries, createRpcClient } from './client.js';
 export { defineRpcEndpoint, defineUncheckedRpcContract } from './endpoint.js';
 export type {
   InfinitePagination,

@@ -2,6 +2,7 @@ import type { Client } from '@orpc/client';
 import type { RPCLinkOptions } from '@orpc/client/fetch';
 import type {
   AnyProcedure,
+  Context,
   InferSchemaInput,
   InferSchemaOutput,
   Schema,
@@ -35,17 +36,60 @@ export type InfinitePagination = {
   next?: string;
   initial?: number;
 };
+type SchemaFields<S> = S extends { fields: infer Fields }
+  ? keyof Fields
+  : S extends { shape: infer Fields }
+    ? keyof Fields
+    : never;
+type InferredPagination<C> = C extends { input: infer I; output: infer O }
+  ? 'cursor' extends SchemaFields<I>
+    ? 'nextCursor' extends SchemaFields<O>
+      ? { input: 'cursor'; next: 'nextCursor'; initial: 0 }
+      : PagePagination<I, O>
+    : PagePagination<I, O>
+  : never;
+type PagePagination<I, O> =
+  'page' extends SchemaFields<I>
+    ? 'nextPage' extends SchemaFields<O>
+      ? { input: 'page'; next: 'nextPage'; initial: 1 }
+      : never
+    : never;
+export type IsPaginated<C> = C extends { kind: 'mutation' }
+  ? false
+  : C extends { kind: 'infinite' }
+    ? true
+    : C extends { pagination: InfinitePagination }
+      ? true
+      : [InferredPagination<C>] extends [never]
+        ? false
+        : true;
+type InferredInputKey<C> = [InferredPagination<C>] extends [never]
+  ? 'cursor'
+  : InferredPagination<C>['input'];
+type InferredNextKey<C> = [InferredPagination<C>] extends [never]
+  ? 'nextCursor'
+  : InferredPagination<C>['next'];
+type ResolvedPagination<C> = {
+  input: PaginationInputKey<C>;
+  next: PaginationNextKey<C>;
+  initial: C extends { pagination: { initial: infer N extends number } }
+    ? N
+    : [InferredPagination<C>] extends [never]
+      ? 0
+      : InferredPagination<C>['initial'];
+};
+
 type HookMetadata = { kind?: RpcHookKind; pagination?: InfinitePagination };
 export type PaginationInputKey<C> = C extends {
   pagination: { input: infer K extends string };
 }
   ? K
-  : 'cursor';
+  : InferredInputKey<C>;
 export type PaginationNextKey<C> = C extends {
   pagination: { next: infer K extends string };
 }
   ? K
-  : 'nextCursor';
+  : InferredNextKey<C>;
 
 type WithField<T, K extends string, V> =
   T extends Record<string, never>
@@ -59,38 +103,36 @@ type InputSchema<D extends RpcContractDefinition> = D extends {
   ? S
   : NoInputSchema;
 type InfiniteInputValue<T> = [T] extends [undefined] ? Record<never, never> : T;
-type NormalizedInput<D extends RpcContractDefinition> = D extends {
-  kind: 'infinite';
-}
-  ? Schema<
-      WithField<
-        InfiniteInputValue<InferSchemaInput<InputSchema<D>>>,
-        PaginationInputKey<D>,
-        number
-      >,
-      WithField<
-        InfiniteInputValue<InferSchemaOutput<InputSchema<D>>>,
-        PaginationInputKey<D>,
-        number
+type NormalizedInput<D extends RpcContractDefinition> =
+  IsPaginated<D> extends true
+    ? Schema<
+        WithField<
+          InfiniteInputValue<InferSchemaInput<InputSchema<D>>>,
+          PaginationInputKey<D>,
+          number
+        >,
+        WithField<
+          InfiniteInputValue<InferSchemaOutput<InputSchema<D>>>,
+          PaginationInputKey<D>,
+          number
+        >
       >
-    >
-  : InputSchema<D>;
-type NormalizedOutput<D extends RpcContractDefinition> = D extends {
-  kind: 'infinite';
-}
-  ? Schema<
-      WithField<
-        InferSchemaInput<D['output']>,
-        PaginationNextKey<D>,
-        number | null
-      >,
-      WithField<
-        InferSchemaOutput<D['output']>,
-        PaginationNextKey<D>,
-        number | null
+    : InputSchema<D>;
+type NormalizedOutput<D extends RpcContractDefinition> =
+  IsPaginated<D> extends true
+    ? Schema<
+        WithField<
+          InferSchemaInput<D['output']>,
+          PaginationNextKey<D>,
+          number | null
+        >,
+        WithField<
+          InferSchemaOutput<D['output']>,
+          PaginationNextKey<D>,
+          number | null
+        >
       >
-    >
-  : D['output'];
+    : D['output'];
 type ObjectConstraint<T> = T extends object ? unknown : never;
 
 export type RpcContract = CheckedContract | UncheckedContract<unknown, unknown>;
@@ -138,7 +180,7 @@ export type ResponseValidatorConstraints<
       InferSchemaOutput<NormalizedOutput<TDefinitions[K]>>,
       InferSchemaOutput<NormalizedOutput<TDefinitions[K]>>
     >;
-  } & (TDefinitions[K] extends { kind: 'infinite' }
+  } & (IsPaginated<TDefinitions[K]> extends true
     ? {
         input?: InputSchema<TDefinitions[K]> &
           ObjectConstraint<
@@ -177,8 +219,8 @@ export type NormalizedRpcContracts<
     (TDefinitions[K] extends { kind: infer Kind extends RpcHookKind }
       ? { kind: Kind }
       : unknown) &
-    (TDefinitions[K] extends { pagination: infer P extends InfinitePagination }
-      ? { pagination: P }
+    (IsPaginated<TDefinitions[K]> extends true
+      ? { pagination: ResolvedPagination<TDefinitions[K]> }
       : unknown);
 };
 export type RpcClient<
@@ -193,7 +235,12 @@ export type RpcClient<
   >;
 };
 export type QueryConnectionOptions = {
-  origin?: string | URL;
+  origin?: string | URL | (() => string | URL | Promise<string | URL>);
+  headers?: RPCLinkOptions<Record<never, never>>['headers'];
+  linkOptions?: Omit<
+    RPCLinkOptions<Record<never, never>>,
+    'url' | 'fetch' | 'headers'
+  >;
   keyPrefix?: readonly string[];
   fetch?: RpcFetch;
 };
@@ -201,10 +248,14 @@ export type RpcEndpoint<
   TContracts extends RpcProcedureContracts = RpcProcedureContracts,
 > = Readonly<{ path: `/${string}`; procedures: TContracts }>;
 
-export type RpcImplementations<TContracts extends RpcProcedureContracts> = {
+export type RpcImplementations<
+  TContracts extends RpcProcedureContracts,
+  TContext extends Context = Record<never, never>,
+> = {
   [K in keyof TContracts]:
     | ((
         input: InferSchemaOutput<TContracts[K]['input']>,
+        context: TContext,
       ) =>
         | InferSchemaInput<TContracts[K]['output']>
         | Promise<InferSchemaInput<TContracts[K]['output']>>)

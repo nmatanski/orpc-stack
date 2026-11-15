@@ -1,5 +1,6 @@
 import {
   augmentPaginationSchema,
+  inferPagination,
   resolvePagination,
 } from './infinite-pagination.js';
 import type {
@@ -29,10 +30,18 @@ const noInputSchema: NoInputSchema = {
 
 const normalizeContract = (contract: RpcContractDefinition): RpcContract => {
   if (contract.validation === 'unchecked') return contract;
-  if (contract.kind === 'infinite') {
-    const pagination = resolvePagination(contract.pagination);
+  const inferred = inferPagination(contract);
+  if (
+    contract.kind !== 'mutation' &&
+    (contract.kind === 'infinite' || contract.pagination || inferred)
+  ) {
+    const pagination = resolvePagination({
+      ...inferred,
+      ...contract.pagination,
+    });
     return {
       ...contract,
+      pagination,
       input: augmentPaginationSchema(
         contract.input,
         pagination.input,
@@ -49,7 +58,7 @@ const normalizeContract = (contract: RpcContractDefinition): RpcContract => {
     };
   }
   if (contract.pagination)
-    throw new Error('Pagination settings require kind: infinite.');
+    throw new Error('Pagination settings are not supported on mutations.');
   return {
     ...contract,
     input: contract.input ?? noInputSchema,
