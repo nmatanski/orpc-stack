@@ -70,6 +70,8 @@ Create `queries` once at module scope. Fetch uses the current browser origin; pa
 
 Inputs and results are inferred; required inputs stay required. Hooks accept TanStack options and return TanStack results. Cache invalidation is explicit.
 
+When the contract omits `input`, use `useCountQuery(options)` or `useCountQuery(undefined, options)`.
+
 The same object exposes manual calls and options with matching cache keys:
 
 ```tsx

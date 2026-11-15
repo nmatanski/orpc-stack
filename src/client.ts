@@ -19,6 +19,7 @@ import {
 } from '@tanstack/react-query';
 import { resolvePagination } from './infinite-pagination.js';
 import type {
+  NoInputSchema,
   PaginationInputKey,
   QueryConnectionOptions,
   RpcClient,
@@ -70,6 +71,18 @@ type Hook<C extends RpcContract, E extends Error> = C extends {
     ) => UseMutationResult<Output<C>, E, Input<C>, Context>
   : QueryHook<C, E>;
 
+type NoInputQueryHook<C extends RpcContract, E extends Error> = {
+  <Selected = Output<C>>(
+    options?: QueryOptions<Output<C>, E, Selected>,
+    queryClient?: QueryClient,
+  ): UseQueryResult<Selected, E>;
+  <Selected = Output<C>>(
+    input: undefined,
+    options?: QueryOptions<Output<C>, E, Selected>,
+    queryClient?: QueryClient,
+  ): UseQueryResult<Selected, E>;
+};
+
 type QueryHook<C extends RpcContract, E extends Error> = C extends {
   kind: 'infinite';
 }
@@ -79,9 +92,11 @@ type QueryHook<C extends RpcContract, E extends Error> = C extends {
         InfiniteOptions<Output<C>, E, Selected, Cursor<C>>
       >
     ) => UseInfiniteQueryResult<Selected, E>
-  : <Selected = Output<C>>(
-      ...args: InputArgs<Input<C>, QueryOptions<Output<C>, E, Selected>>
-    ) => UseQueryResult<Selected, E>;
+  : C['input'] extends NoInputSchema
+    ? NoInputQueryHook<C, E>
+    : <Selected = Output<C>>(
+        ...args: InputArgs<Input<C>, QueryOptions<Output<C>, E, Selected>>
+      ) => UseQueryResult<Selected, E>;
 
 type HookName<K extends string, C extends RpcContract> = C extends {
   kind: 'mutation';
@@ -190,11 +205,35 @@ export const createQueries = <
         );
     } else {
       hookName = `${prefix}Query`;
-      hook = (
-        input?: unknown,
-        options: QueryOptions<unknown, TError, unknown> = {},
-        queryClient?: QueryClient,
-      ) => useQuery(procedure.queryOptions({ ...options, input }), queryClient);
+      if (contract.input['~standard'].vendor === 'orpc-stack/no-input') {
+        hook = (
+          inputOrOptions?: QueryOptions<unknown, TError, unknown>,
+          optionsOrClient?:
+            | QueryOptions<unknown, TError, unknown>
+            | QueryClient,
+          queryClient?: QueryClient,
+        ) => {
+          const legacy =
+            queryClient !== undefined ||
+            (inputOrOptions === undefined &&
+              optionsOrClient !== undefined &&
+              !('getQueryCache' in optionsOrClient));
+          const options = legacy ? optionsOrClient : (inputOrOptions ?? {});
+          const client = legacy
+            ? queryClient
+            : (optionsOrClient as QueryClient | undefined);
+          return useQuery(
+            procedure.queryOptions({ ...options, input: undefined }),
+            client,
+          );
+        };
+      } else
+        hook = (
+          input?: unknown,
+          options: QueryOptions<unknown, TError, unknown> = {},
+          queryClient?: QueryClient,
+        ) =>
+          useQuery(procedure.queryOptions({ ...options, input }), queryClient);
     }
     if (
       Object.hasOwn(hooks, hookName) ||

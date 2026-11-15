@@ -57,6 +57,38 @@ const until = async (assertion: () => void) => {
   });
 };
 
+it('accepts options directly for omitted-input contracts and retains positional calls', async () => {
+  const endpoint = defineRpcEndpoint('/rpc', { count: { output: z.number() } });
+  const app = new Hono();
+  const handler = vi.fn(() => 42);
+  mountHono(app, endpoint, { count: handler });
+  const { useCountQuery } = createQueries(endpoint, {
+    origin: 'http://localhost',
+    fetch: async (request) => app.request(request),
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  await mount(() => {
+    useCountQuery({ enabled: false });
+    useCountQuery(undefined, { enabled: false }, client);
+  }, client);
+  expect(handler).not.toHaveBeenCalled();
+  let selected: string | undefined;
+  let legacy: number | undefined;
+  await mount(() => {
+    selected = useCountQuery({ select: (value) => String(value) }, client).data;
+    legacy = useCountQuery(undefined, undefined, client).data;
+  }, client);
+  await until(() => {
+    expect(selected).toBe('42');
+    expect(legacy).toBe(42);
+  });
+  expect(handler).toHaveBeenCalledOnce();
+  cleanup();
+  client.clear();
+});
+
 it('supports schema-defined nullable string cursors in generated hooks and manual options', async () => {
   const custom = defineRpcEndpoint('/rpc', {
     search: {
@@ -128,7 +160,7 @@ it('exports stable typed hooks and shares query cache keys with manual rpc optio
   await client.query(hooks.count.queryOptions());
   const selected = vi.fn();
   await mount(() => {
-    const query = hooks.useCountQuery(undefined, {
+    const query = hooks.useCountQuery({
       select: (count) => `Count: ${count}`,
     });
     expectTypeOf(query.data).toEqualTypeOf<string | undefined>();

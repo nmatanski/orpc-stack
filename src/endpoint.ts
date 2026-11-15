@@ -1,9 +1,9 @@
-import type { Schema } from '@orpc/server';
 import {
   augmentPaginationSchema,
   resolvePagination,
 } from './infinite-pagination.js';
 import type {
+  NoInputSchema,
   NormalizedRpcContracts,
   ResponseValidatorConstraints,
   RpcContract,
@@ -15,7 +15,8 @@ import type {
   UncheckedSchema,
 } from './types.js';
 
-const noInputSchema: Schema<undefined, undefined> = {
+const noInputSchema: NoInputSchema = {
+  '~orpc-stack': 'no-input',
   '~standard': {
     version: 1,
     vendor: 'orpc-stack/no-input',

@@ -10,6 +10,9 @@ export type RpcApi = Readonly<Record<string, AnyProcedure>>;
 export type RpcFetch = NonNullable<
   RPCLinkOptions<Record<never, never>>['fetch']
 >;
+export type NoInputSchema = Schema<undefined, undefined> & {
+  readonly '~orpc-stack': 'no-input';
+};
 export type CheckedContract<
   TOutput extends Schema<unknown, unknown> = Schema<unknown, unknown>,
 > = {
@@ -54,7 +57,7 @@ type InputSchema<D extends RpcContractDefinition> = D extends {
   input: infer S extends Schema<unknown, unknown>;
 }
   ? S
-  : Schema<undefined, undefined>;
+  : NoInputSchema;
 type InfiniteInputValue<T> = [T] extends [undefined] ? Record<never, never> : T;
 type NormalizedInput<D extends RpcContractDefinition> = D extends {
   kind: 'infinite';
